@@ -29,7 +29,8 @@ class TestUrlEndpoint(unittest.TestCase):
         self.assertRaises(ValueError, fn_by_type, 'url:lakdh', None)
 
     def test_get_endpoint_fn_argument_is_ignored(self):
-        should_be_ignored = lambda x: x
+        def should_be_ignored(x):
+            return x
         self.assertNotEqual(fn_by_type('url', should_be_ignored),
                             should_be_ignored)
 

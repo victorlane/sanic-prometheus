@@ -1,12 +1,22 @@
 import os
 
-from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, \
-    core, multiprocess, start_http_server
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    REGISTRY,
+    CollectorRegistry,
+    multiprocess,
+    start_http_server,
+)
 from prometheus_client.exposition import generate_latest
 from sanic.response import raw
 
 from . import endpoint, metrics
 from .exceptions import SanicPrometheusError
+
+
+def _is_multiprocess_on():
+    return ('PROMETHEUS_MULTIPROC_DIR' in os.environ or
+            'prometheus_multiproc_dir' in os.environ)
 
 
 class MonitorSetup:
@@ -29,7 +39,7 @@ class MonitorSetup:
             return raw(self._get_metrics_data(),
                        content_type=CONTENT_TYPE_LATEST)
 
-    def start_server(self, addr='', port=8000):
+    def start_server(self, addr='0.0.0.0', port=8000):
         """
         Expose /metrics endpoint on a new server that will
         be launched on `<addr>:<port>`.
@@ -46,7 +56,7 @@ class MonitorSetup:
 
     def _get_metrics_data(self):
         if not self._multiprocess_on:
-            registry = core.REGISTRY
+            registry = REGISTRY
         else:
             registry = CollectorRegistry()
             multiprocess.MultiProcessCollector(registry)
@@ -61,9 +71,10 @@ def monitor(app, endpoint_type='url:1',
             multiprocess_mode='all',
             metrics_path='/metrics',
             is_middleware=True,
-            metrics_list=None):
+            metrics_list=None,
+            per_worker_metrics=False):
     """
-    Regiesters a bunch of metrics for Sanic server
+    Registers a bunch of metrics for Sanic server
     (request latency, count, etc) and exposes /metrics endpoint
     to allow Prometheus to scrape them out.
 
@@ -94,23 +105,33 @@ def monitor(app, endpoint_type='url:1',
                             usage related metrics are collected.
                             Setting it to None will disable memory metrics
                             collection.
+    :param per_worker_metrics: when True, additionally record request count
+                            and latency per worker process under
+                            `sanic_worker_request_count` and
+                            `sanic_worker_request_latency_sec`, labeled with
+                            a `worker` label (the Sanic worker name, or the
+                            PID as a fallback). This lets you deep-dive into
+                            a specific worker on top of the aggregate
+                            metrics. Off by default since it multiplies the
+                            number of time series by the worker count.
     :multiprocess_mode':
     :metrics_path:         path where metrics will be exposed
 
     NOTE: memory usage is not collected when when multiprocessing is enabled
     """
-    multiprocess_on = 'prometheus_multiproc_dir' in os.environ
+    multiprocess_on = _is_multiprocess_on()
     get_endpoint = endpoint.fn_by_type(endpoint_type, get_endpoint_fn)
     memcollect_enabled = mmc_period_sec is not None
 
     @app.listener('before_server_start')
-    def before_start(app, loop):
-        app.metrics = {}
+    def before_start(app):
+        app.ctx.metrics = {}
         metrics.init(
             app,
             latency_buckets, multiprocess_mode,
             memcollect_enabled=memcollect_enabled,
             metrics_list=metrics_list,
+            per_worker_metrics=per_worker_metrics,
         )
 
     if is_middleware is True:
@@ -126,24 +147,23 @@ def monitor(app, endpoint_type='url:1',
 
     if multiprocess_on:
         @app.listener('after_server_stop')
-        def after_stop(app, loop):
+        def after_stop(app):
             multiprocess.mark_process_dead(os.getpid())
     elif memcollect_enabled:
         @app.listener('before_server_start')
-        async def start_memcollect_task(app, loop):
-            app.memcollect_task = loop.create_task(
+        async def start_memcollect_task(app):
+            app.ctx.memcollect_task = app.loop.create_task(
                 metrics.periodic_memcollect_task(
                     app,
                     mmc_period_sec,
-                    loop
                 )
             )
 
         @app.listener('after_server_stop')
-        async def stop_memcollect_task(app, loop):
-            app.memcollect_task.cancel()
+        async def stop_memcollect_task(app):
+            app.ctx.memcollect_task.cancel()
 
     return MonitorSetup(app, metrics_path, multiprocess_on)
 
 
-__all__ = ['monitor']
+__all__ = ['monitor', 'MonitorSetup', 'SanicPrometheusError']

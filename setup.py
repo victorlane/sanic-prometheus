@@ -13,14 +13,15 @@ setup(
     packages=['sanic_prometheus'],
     zip_safe=False,
     platforms='any',
+    python_requires='>=3.9',
     install_requires=[
-        'sanic>=18.12',
-        'prometheus-client~=0.7.1',
-        'psutil>=5.2.0'
+        'sanic>=21.12',
+        'prometheus-client>=0.16,<2.0',
+        'psutil>=5.8.0'
     ],
     classifiers=[
         'Intended Audience :: Developers',
-        'Development Status :: 3 - Alpha',
+        'Development Status :: 4 - Beta',
         'License :: OSI Approved :: MIT License',
 
         'Operating System :: OS Independent',
@@ -29,8 +30,11 @@ setup(
         'Topic :: Internet :: WWW/HTTP :: Dynamic Content',
         'Topic :: Software Development :: Libraries :: Python Modules',
 
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7'
+        'Programming Language :: Python :: 3.9',
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
+        'Programming Language :: Python :: 3.13',
     ],
     keywords='sanic prometheus monitoring'
 )

@@ -1,6 +1,14 @@
 Changelog
 =========
 
+Version 0.3.0 (on Jul 04 2026)
+------------------------------
+* Revived for modern Sanic (21.12+, tested against 25.12) and prometheus-client >= 0.16.
+  Metrics dict moved from ``app.metrics`` to ``app.ctx.metrics``. Support the
+  ``PROMETHEUS_MULTIPROC_DIR`` env var (legacy lowercase name still works).
+  Dropped the removed ``loop`` kwarg usages (Python 3.10+) and the deprecated
+  ``loop`` listener argument. CI moved from Travis to GitHub Actions.
+
 Version 0.2.1 (on Oct 12 2020)
 ------------------------------
 * Changed the sanic request ctx for __START_TIME__ for the middleware is going to be deprecated, added the newer ctx way for adding custom objects. (by Arvind Mishra)

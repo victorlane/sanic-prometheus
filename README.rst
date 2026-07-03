@@ -13,6 +13,7 @@ Versions compatibility
 * ☑︎ use **0.1.6** if you have to use `promtheus-client` <= 0.4.2
 * ☑︎ use **0.1.8** with `prometheus-client` >= 0.5.0
 * ☑︎ use **0.2.0** with `prometheus-client` >= 0.7.1 and Sanic >= 18.12
+* ☑︎ use **0.3.0** with `prometheus-client` >= 0.16 and Sanic >= 21.12 (metrics live on ``app.ctx.metrics``)
 
 Exposed metrics
 -----------------
@@ -23,6 +24,13 @@ At the moment ``sanic-prometheus`` provides four metrics:
 * **sanic_request_latency_sec** - request latency in seconds (labels: *method*, *endpoint*) [`histogram <https://prometheus.io/docs/concepts/metric_types/#histogram>`_]
 * **sanic_mem_rss_bytes** - resident memory used by the process (in bytes) [`gauge <https://prometheus.io/docs/concepts/metric_types/#gauge>`_]
 * **sanic_mem_rss_perc** - a percent of total physical memory used by the process running Sanic [`gauge <https://prometheus.io/docs/concepts/metric_types/#gauge>`_]
+
+With ``monitor(app, per_worker_metrics=True)`` two more metrics are recorded, letting you deep-dive into a specific worker process on top of the aggregates (at the cost of one extra set of time series per worker):
+
+* **sanic_worker_request_count** - per-worker request count (labels: *worker*, *method*, *endpoint*, *http_status*) [`counter <https://prometheus.io/docs/concepts/metric_types/#counter>`_]
+* **sanic_worker_request_latency_sec** - per-worker request latency in seconds (labels: *worker*, *method*, *endpoint*, *http_status*) [`histogram <https://prometheus.io/docs/concepts/metric_types/#histogram>`_]
+
+The ``worker`` label is the Sanic worker name (e.g. ``Sanic-Server-0-0``), falling back to ``pid-<pid>`` when it is not available.
 
 Labels
 -----------------
@@ -41,11 +49,15 @@ Easy-peasy:
   from sanic import Sanic
   from sanic_prometheus import monitor
 
-  app = Sanic()
+  app = Sanic("my_app")
   ...
 
+  # NOTE: keep app setup (routes, monitor(...)) at module level -- Sanic's
+  # worker processes re-import this module, so anything registered only
+  # under `if __name__ == "__main__"` would be lost in the workers
+  monitor(app).expose_endpoint() # adds /metrics endpoint to your Sanic server
+
   if __name__ == "__main__":
-    monitor(app).expose_endpoint() # adds /metrics endpoint to your Sanic server
     app.run(host="0.0.0.0", port=8000)
 
 
@@ -69,11 +81,11 @@ Multiprocess mode
 
 Sanic allows to launch multiple worker processes to utilise parallelisation, which is great but makes metrics collection much trickier (`read more <https://github.com/prometheus/client_python/blob/master/README.md#multiprocess-mode-gunicorn>`_) and introduces some limitations.
 
-In order to collect metrics from multiple workers, create a directory and point a ``prometheus_multiproc_dir`` environment variable to it. Make sure the directory is empty before you launch your service::
+In order to collect metrics from multiple workers, create a directory and point a ``PROMETHEUS_MULTIPROC_DIR`` environment variable to it (the legacy lowercase ``prometheus_multiproc_dir`` is also still recognized). Make sure the directory is empty before you launch your service::
 
 
      % rm -rf /path/to/your/directory/*
-     % env prometheus_multiproc_dir=/path/to/your/directory python your_sanic_app.py
+     % env PROMETHEUS_MULTIPROC_DIR=/path/to/your/directory python your_sanic_app.py
 
 
 Unfortunately you can not use ``monitor(app).start_server(addr=..., port=...)`` in multiprocess mode as it exposes a prometheus endpoint from a newly created process.
@@ -100,12 +112,16 @@ Prometheus quering examples:
 
     histogram_quantile(0.95, sum(rate(sanic_request_latency_sec_bucket[5m])) by (le))
 
+* *95th percentile of request latency, per worker (requires* ``per_worker_metrics=True`` *)*::
+
+    histogram_quantile(0.95, sum(rate(sanic_worker_request_latency_sec_bucket[5m])) by (le, worker))
+
 * *Physical memory usage percent over last 10 minutes*::
 
     rate(sanic_mem_rss_perc[10m])
 
-.. |Build Status| image:: https://travis-ci.org/dkruchinin/sanic-prometheus.svg?branch=master
-   :target: https://travis-ci.org/dkruchinin/sanic-prometheus
+.. |Build Status| image:: https://github.com/dkruchinin/sanic-prometheus/actions/workflows/ci.yml/badge.svg
+   :target: https://github.com/dkruchinin/sanic-prometheus/actions/workflows/ci.yml
 .. |PyPI| image:: https://img.shields.io/pypi/v/sanic-prometheus.svg
    :target: https://pypi.python.org/pypi/sanic-prometheus/
 .. |PyPI version| image:: https://img.shields.io/pypi/pyversions/sanic-prometheus.svg
